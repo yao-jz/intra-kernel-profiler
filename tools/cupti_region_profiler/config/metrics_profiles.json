@@ -1,0 +1,44 @@
+{
+  "profiles": {
+    "core": [
+      "smsp__sass_inst_executed"
+    ],
+    "divergence": [
+      "smsp__sass_inst_executed",
+      "smsp__sass_thread_inst_executed",
+      "smsp__sass_thread_inst_executed_pred_on"
+    ],
+    "memory": [
+      "smsp__sass_inst_executed",
+      "smsp__sass_inst_executed_op_global_ld",
+      "smsp__sass_inst_executed_op_global_st",
+      "smsp__sass_inst_executed_op_shared_ld",
+      "smsp__sass_inst_executed_op_shared_st",
+      "smsp__sass_sectors_mem_global",
+      "smsp__sass_sectors_mem_global_ideal",
+      "smsp__sass_l1tex_pipe_lsu_wavefronts_mem_shared",
+      "smsp__sass_l1tex_pipe_lsu_wavefronts_mem_shared_ideal"
+    ],
+    "instruction_mix": [
+      "smsp__sass_inst_executed",
+      "smsp__sass_inst_executed_op_branch",
+      "smsp__sass_inst_executed_op_global",
+      "smsp__sass_inst_executed_op_shared",
+      "smsp__sass_inst_executed_op_tma",
+      "smsp__sass_inst_executed_op_shared_gmma",
+      "smsp__sass_thread_inst_executed"
+    ],
+    "branch": [
+      "smsp__sass_inst_executed_op_branch",
+      "smsp__sass_thread_inst_executed_op_branch",
+      "smsp__sass_branch_targets_threads_divergent",
+      "smsp__sass_branch_targets_threads_uniform"
+    ]
+  },
+  "aggregation": {
+    "smsp__sass_inst_executed": { "kind": "SUM" },
+    "smsp__sass_thread_inst_executed": { "kind": "SUM" },
+    "smsp__sass_thread_inst_executed_pred_on": { "kind": "SUM" }
+  },
+  "notes": "Discover available metrics: WW_CUPTI_SASS_LIST=1. Profiles are selectable via WW_CUPTI_SASS_PROFILE."
+}

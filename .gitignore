@@ -1,0 +1,95 @@
+# ── Build directories ──────────────────────────────────────────────
+build/
+_build/
+_ci_build/
+
+# ── Demo / run output directories ─────────────────────────────────
+_demo_out*/
+_cupti_real_out/
+
+# ── CMake generated ───────────────────────────────────────────────
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# ── Compiled objects & libraries ──────────────────────────────────
+*.o
+*.a
+*.so
+*.ptx
+*.cubin
+
+# ── Core dumps ────────────────────────────────────────────────────
+core
+core.*
+
+# ── Profiler run outputs (generated at runtime, not source) ──────
+# Trace JSON
+*_trace.json
+*_trace_summary.json
+*_summary.json
+
+# NVBit / CUPTI output files
+pc2region_*.json
+region_stats_*.json
+hotspots_*.json
+mem_trace_*.jsonl
+summary_*.txt
+sass_all_*.sass
+nvdisasm_*.sass
+sass_regions_*/
+cubin_*.cubin
+*.ptx_dump
+
+# CUPTI output files
+pcsampling*.json
+sassmetrics_raw*.json
+instrexec_raw*.json
+pmsamp_raw*.json
+sass_metrics_list.txt
+
+# ── Example compiled binaries ─────────────────────────────────────
+examples/**/minimal_cupti_target
+examples/**/minimal_nvbit_target
+examples/**/minimal_region_target
+examples/**/tiled_gemm
+examples/**/tiled_gemm_nvbit
+
+# ── Pre-generated example outputs (intentionally tracked) ─────────
+# These are checked in so users can browse results without a GPU.
+!examples/gemm/gemm_trace.json
+!examples/gemm/gemm_trace_summary.json
+!examples/gemm/explorer.html
+
+# Example run output directories
+examples/**/_out/
+examples/**/nvbit_*/
+
+# ── Tool build artifacts ──────────────────────────────────────────
+# Binary (not the directory — trailing slash excluded by git for files)
+tools/cupti_minimal_activity/cupti_minimal_activity
+tools/**/*.o
+tools/**/*.so
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── Clangd / LSP ─────────────────────────────────────────────────
+.clangd
+.cache/
+compile_commands.json
+
+# ── Editor / IDE ──────────────────────────────────────────────────
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+.cursor/
+
+# ── AI assistant state ────────────────────────────────────────────
+.claude/
+
+# ── Log files ─────────────────────────────────────────────────────
+*.log

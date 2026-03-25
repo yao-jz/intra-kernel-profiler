@@ -1,0 +1,53 @@
+CompileFlags:
+  Add:
+    # nvcc version macros — clangd doesn't define these, which can break
+    # __CUDA_ARCH__ guards and version-gated code paths.
+    - -D__CUDACC_VER_MAJOR__=12
+    - -D__CUDACC_VER_MINOR__=4
+
+    # CUDA includes — adjust to your local CUDA toolkit path
+    - -I/usr/local/cuda-12.4/include
+    - -I/usr/local/cuda-12.4/targets/sbsa-linux/include
+
+    # CUPTI includes (bundled with CUDA toolkit)
+    - -I/usr/local/cuda-12.4/extras/CUPTI/include
+
+    # IKP headers
+    - -I${REPO_ROOT}/include
+
+    # NVBit release headers (only needed if working on tools/nvbit_region_profiler)
+    # - -I/path/to/nvbit_release/core
+
+    # CUDA compiler flags
+    - --cuda-gpu-arch=sm_90a
+    - --cuda-path=/usr/local/cuda-12.4
+    - -x
+    - cuda
+
+    # C++ standard
+    - -std=c++17
+
+    # Additional flags
+    - -Wall
+    - -Wno-unknown-cuda-version
+
+  Remove:
+    # Remove problematic flags that clangd doesn't understand
+    - -forward-unknown-to-host-compiler
+    - --generate-code=*
+    - --expt-relaxed-constexpr
+    - -rdc=true
+
+Diagnostics:
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
+  ClangTidy:
+    Add: []
+
+InlayHints:
+  Enabled: Yes
+  ParameterNames: Yes
+  DeducedTypes: Yes
+
+Hover:
+  ShowAKA: Yes

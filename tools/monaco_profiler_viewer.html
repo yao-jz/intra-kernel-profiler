@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>WarpWise Profiler Viewer - Monaco Editor Reference</title>
+<style>
+/*──────────────────────────────────────────────────────────────────────────────
+  LAYOUT
+──────────────────────────────────────────────────────────────────────────────*/
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1e1e1e; color: #ccc; overflow: hidden; }
+#toolbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: #252526; border-bottom: 1px solid #3c3c3c; height: 40px; }
+#toolbar button { background: #0e639c; color: #fff; border: none; padding: 4px 12px; cursor: pointer; border-radius: 3px; font-size: 12px; }
+#toolbar button:hover { background: #1177bb; }
+#toolbar span { font-size: 13px; color: #999; }
+#status { margin-left: auto; font-size: 12px; color: #569cd6; }
+#editors-container { display: flex; height: calc(100% - 40px); }
+.editor-pane { flex: 1; display: flex; flex-direction: column; }
+.editor-pane:first-child { border-right: 2px solid #3c3c3c; }
+.pane-header { padding: 4px 12px; background: #2d2d2d; font-size: 12px; color: #8a8a8a; border-bottom: 1px solid #3c3c3c; }
+.editor-wrapper { flex: 1; overflow: hidden; }
+
+/*──────────────────────────────────────────────────────────────────────────────
+  DECORATION CSS CLASSES
+  Monaco decorations reference CSS classes you inject into the page.
+  The className property on IModelDecorationOptions maps to these.
+──────────────────────────────────────────────────────────────────────────────*/
+
+/* ---- Heatmap line backgrounds (whole-line decorations via className) ---- */
+.heatmap-hot-5   { background: rgba(255, 0, 0, 0.40) !important; }   /* hottest */
+.heatmap-hot-4   { background: rgba(255, 60, 0, 0.32) !important; }
+.heatmap-hot-3   { background: rgba(255, 120, 0, 0.24) !important; }
+.heatmap-hot-2   { background: rgba(255, 180, 0, 0.16) !important; }
+.heatmap-hot-1   { background: rgba(255, 220, 0, 0.10) !important; }
+.heatmap-cold-1  { background: rgba(0, 100, 255, 0.10) !important; }
+.heatmap-cold-2  { background: rgba(0, 100, 255, 0.18) !important; }
+.heatmap-cold-3  { background: rgba(0, 100, 255, 0.26) !important; }  /* coldest */
+
+/* ---- Gutter dot decorations (via glyphMarginClassName) ---- */
+.gutter-dot-red    { background: #e51400; border-radius: 50%; margin: 4px; width: 8px !important; height: 8px !important; }
+.gutter-dot-orange { background: #e8a000; border-radius: 50%; margin: 4px; width: 8px !important; height: 8px !important; }
+.gutter-dot-green  { background: #16c60c; border-radius: 50%; margin: 4px; width: 8px !important; height: 8px !important; }
+.gutter-dot-blue   { background: #3b78ff; border-radius: 50%; margin: 4px; width: 8px !important; height: 8px !important; }
+
+/* ---- Gutter bar decorations (via linesDecorationsClassName) ---- */
+.gutter-bar-red    { background: #e51400; width: 3px !important; margin-left: 3px; }
+.gutter-bar-orange { background: #e8a000; width: 3px !important; margin-left: 3px; }
+.gutter-bar-green  { background: #16c60c; width: 3px !important; margin-left: 3px; }
+.gutter-bar-blue   { background: #3b78ff; width: 3px !important; margin-left: 3px; }
+
+/* ---- Highlight for "active/clicked" line ---- */
+.active-line-highlight { background: rgba(255, 255, 0, 0.15) !important; }
+
+/* ---- Highlight for mapped lines in editor 2 ---- */
+.mapped-line-highlight { background: rgba(0, 180, 255, 0.20) !important; }
+
+/* ---- Overview ruler and minimap colors are set via JS options, not CSS ---- */
+
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span>WarpWise Profiler Viewer</span>
+  <button onclick="applyHeatmap()">Apply Heatmap</button>
+  <button onclick="clearAllDecorations()">Clear Decorations</button>
+  <button onclick="jumpToHottest()">Jump to Hottest</button>
+  <span id="status">Ready</span>
+</div>
+
+<div id="editors-container">
+  <!-- Left pane: CUDA source -->
+  <div class="editor-pane">
+    <div class="pane-header">Source: kernel.cu (CUDA)</div>
+    <div class="editor-wrapper" id="editor-source"></div>
+  </div>
+  <!-- Right pane: SASS assembly -->
+  <div class="editor-pane">
+    <div class="pane-header">Assembly: kernel.sass</div>
+    <div class="editor-wrapper" id="editor-asm"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+  1. LOADING MONACO v0.52 FROM CDN WITH CROSS-ORIGIN WORKER WORKAROUND
+═══════════════════════════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.min.js"></script>
+<script>
+// ─── CDN base URL (jsdelivr has the complete npm package) ───
+const MONACO_CDN = "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min";
+
+// Configure the AMD loader to find Monaco modules at the CDN
+require.config({
+  paths: { "vs": MONACO_CDN + "/vs" }
+});
+
+// ─── CROSS-ORIGIN WORKER WORKAROUND ───
+// Web Workers cannot be loaded cross-origin directly.
+// The data: URL trick creates a same-origin blob that bootstraps
+// the real worker via importScripts from the CDN.
+window.MonacoEnvironment = {
+  getWorkerUrl: function (_workerId, _label) {
+    return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+      self.MonacoEnvironment = { baseUrl: "${MONACO_CDN}/" };
+      importScripts("${MONACO_CDN}/vs/base/worker/workerMain.js");
+    `)}`;
+  }
+};
+
+// ─── Load Monaco and initialize everything ───
+require(["vs/editor/editor.main"], function () {
+  // ═══════════════════════════════════════════════════════════════════════
+  // 3. REGISTER CUSTOM "CUDA" LANGUAGE WITH MONARCH TOKENIZER
+  // ═══════════════════════════════════════════════════════════════════════
+  registerCudaLanguage();
+
+  // Register a SASS (shader assembly) language for the right pane
+  registerSassAsmLanguage();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 5. READ-ONLY VIEWER CONFIGURATION
+  // ═══════════════════════════════════════════════════════════════════════
+  const VIEWER_OPTIONS = {
+    readOnly:                  true,
+    domReadOnly:               true,       // prevent DOM-level editing too
+    glyphMargin:               true,       // needed for gutter dots
+    lineNumbersMinChars:       4,
+    folding:                   true,
+    minimap:                   { enabled: true, scale: 2 },
+    scrollBeyondLastLine:      false,
+    renderLineHighlight:       "none",     // we do our own highlighting
+    matchBrackets:             "never",
+    occurrencesHighlight:      "off",
+    selectionHighlight:        false,
+    links:                     false,
+
+    // ── Disable all autocomplete / intellisense ──
+    quickSuggestions:           false,
+    suggestOnTriggerCharacters: false,
+    acceptSuggestionOnEnter:   "off",
+    tabCompletion:             "off",
+    wordBasedSuggestions:      "off",
+    parameterHints:            { enabled: false },
+
+    // ── Disable error squiggles ──
+    // (Markers are model-level; just don't set any. Also disable validation.)
+    renderValidationDecorations: "off",
+
+    // ── Compact layout ──
+    lineDecorationsWidth:      12,         // space for gutter bars
+    fontSize:                  13,
+    lineHeight:                20,
+    padding:                   { top: 4, bottom: 4 },
+    contextmenu:               false,      // no right-click menu
+    overviewRulerLanes:        2,
+  };
+
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 4. CREATE TWO SIDE-BY-SIDE EDITOR INSTANCES
+  // ═══════════════════════════════════════════════════════════════════════
+  const editorSource = monaco.editor.create(
+    document.getElementById("editor-source"),
+    Object.assign({}, VIEWER_OPTIONS, {
+      value: SAMPLE_CUDA_SOURCE,
+      language: "cuda",
+      theme: "vs-dark",
+    })
+  );
+
+  const editorAsm = monaco.editor.create(
+    document.getElementById("editor-asm"),
+    Object.assign({}, VIEWER_OPTIONS, {
+      value: SAMPLE_SASS_ASM,
+      language: "sass-asm",
+      theme: "vs-dark",
+    })
+  );
+
+  // Handle window resize for both editors
+  window.addEventListener("resize", () => {
+    editorSource.layout();
+    editorAsm.layout();
+  });
+
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SOURCE-TO-ASSEMBLY LINE MAPPING (like Compiler Explorer)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // Mapping: source line number -> array of assembly line numbers
+  // In a real profiler, this comes from DWARF debug info or SASS line tables
+  const sourceToAsmMap = {
+    8:  [3, 4, 5],          // int idx = ...
+    9:  [6, 7],             // if (idx < n)
+    10: [8, 9, 10, 11, 12], // out[idx] = ...
+  };
+
+  // Reverse map: asm line -> source line
+  const asmToSourceMap = {};
+  for (const [srcLine, asmLines] of Object.entries(sourceToAsmMap)) {
+    for (const asmLine of asmLines) {
+      asmToSourceMap[asmLine] = parseInt(srcLine);
+    }
+  }
+
+  // Decoration collections for cross-highlighting
+  let sourceHighlightDecos = editorSource.createDecorationsCollection([]);
+  let asmHighlightDecos    = editorAsm.createDecorationsCollection([]);
+
+  // ── Click source editor -> highlight corresponding assembly lines ──
+  editorSource.onMouseDown(function (e) {
+    if (!e.target.position) return;
+    const lineNumber = e.target.position.lineNumber;
+    setStatus("Source line " + lineNumber + " clicked");
+
+    // Clear previous
+    asmHighlightDecos.clear();
+    sourceHighlightDecos.clear();
+
+    const asmLines = sourceToAsmMap[lineNumber];
+    if (!asmLines) return;
+
+    // Highlight the clicked source line
+    sourceHighlightDecos.set([{
+      range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+      options: {
+        isWholeLine: true,
+        className: "active-line-highlight",
+      }
+    }]);
+
+    // Highlight all mapped assembly lines
+    asmHighlightDecos.set(asmLines.map(asmLine => ({
+      range: new monaco.Range(asmLine, 1, asmLine, 1),
+      options: {
+        isWholeLine: true,
+        className: "mapped-line-highlight",
+        overviewRuler: {
+          color: "#0af",
+          position: monaco.editor.OverviewRulerLane.Center,
+        },
+        minimap: {
+          color: "#0af",
+          position: monaco.editor.MinimapPosition.Inline,
+        },
+      }
+    })));
+
+    // Scroll assembly editor to first mapped line
+    editorAsm.revealLineInCenter(asmLines[0]);
+  });
+
+  // ── Click assembly editor -> highlight corresponding source line ──
+  editorAsm.onMouseDown(function (e) {
+    if (!e.target.position) return;
+    const lineNumber = e.target.position.lineNumber;
+    setStatus("ASM line " + lineNumber + " clicked");
+
+    sourceHighlightDecos.clear();
+    asmHighlightDecos.clear();
+
+    const srcLine = asmToSourceMap[lineNumber];
+    if (!srcLine) return;
+
+    // Highlight all asm lines that map to this source line
+    const asmLines = sourceToAsmMap[srcLine] || [];
+    asmHighlightDecos.set(asmLines.map(al => ({
+      range: new monaco.Range(al, 1, al, 1),
+      options: { isWholeLine: true, className: "mapped-line-highlight" }
+    })));
+
+    // Highlight source line
+    sourceHighlightDecos.set([{
+      range: new monaco.Range(srcLine, 1, srcLine, 1),
+      options: { isWholeLine: true, className: "active-line-highlight" }
+    }]);
+
+    editorSource.revealLineInCenter(srcLine);
+  });
+
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 2. DECORATION API EXAMPLES
+  //    Store references globally so toolbar buttons can use them.
+  // ═══════════════════════════════════════════════════════════════════════
+  let heatmapDecos = editorSource.createDecorationsCollection([]);
+
+  // Expose to global scope for toolbar buttons
+  window._editorSource = editorSource;
+  window._editorAsm    = editorAsm;
+  window._heatmapDecos = heatmapDecos;
+
+
+  // ── Apply decorations immediately to demonstrate all features ──
+  applyHeatmap();
+
+  setStatus("Editors loaded. Click source lines 8-10 to see cross-highlighting.");
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. FULL DECORATION API EXAMPLES
+// ═══════════════════════════════════════════════════════════════════════════
+
+function applyHeatmap() {
+  if (!window._editorSource) return;
+  const editor = window._editorSource;
+
+  // Example profiling data: line -> cycles (higher = hotter)
+  const profilingData = {
+    8:  { cycles: 120,  pct: 15 },
+    9:  { cycles: 80,   pct: 10 },
+    10: { cycles: 950,  pct: 62 },   // hot line: the memory access
+    11: { cycles: 30,   pct: 4  },
+  };
+
+  function heatClass(pct) {
+    if (pct >= 50) return "heatmap-hot-5";
+    if (pct >= 30) return "heatmap-hot-4";
+    if (pct >= 20) return "heatmap-hot-3";
+    if (pct >= 10) return "heatmap-hot-2";
+    if (pct >= 5)  return "heatmap-hot-1";
+    if (pct >= 2)  return "heatmap-cold-1";
+    if (pct >= 1)  return "heatmap-cold-2";
+    return "heatmap-cold-3";
+  }
+
+  function gutterDotClass(pct) {
+    if (pct >= 50) return "gutter-dot-red";
+    if (pct >= 20) return "gutter-dot-orange";
+    if (pct >= 5)  return "gutter-dot-green";
+    return "gutter-dot-blue";
+  }
+
+  function gutterBarClass(pct) {
+    if (pct >= 50) return "gutter-bar-red";
+    if (pct >= 20) return "gutter-bar-orange";
+    if (pct >= 5)  return "gutter-bar-green";
+    return "gutter-bar-blue";
+  }
+
+  const decorations = [];
+
+  for (const [lineStr, data] of Object.entries(profilingData)) {
+    const line = parseInt(lineStr);
+    decorations.push({
+      range: new monaco.Range(line, 1, line, 1),
+      options: {
+        // ── (A) Colored background for the whole line ──
+        isWholeLine: true,
+        className: heatClass(data.pct),
+
+        // ── (B) Glyph margin decoration (colored dot in the gutter) ──
+        glyphMarginClassName: gutterDotClass(data.pct),
+
+        // ── (B-alt) Lines decoration (colored bar in margin) ──
+        // Only one of glyphMarginClassName or linesDecorationsClassName
+        // makes visual sense at a time; here we use both to demonstrate.
+        linesDecorationsClassName: gutterBarClass(data.pct),
+
+        // ── (C) Hover message on the line ──
+        // Accepts IMarkdownString - supports full Markdown
+        hoverMessage: [
+          { value: "**Profiling Data**" },
+          { value: `Cycles: \`${data.cycles}\` | ${data.pct}% of kernel` },
+          { value: `Heat level: ${heatClass(data.pct).replace("heatmap-", "")}` },
+        ],
+
+        // ── (C-alt) Hover message specifically on the glyph margin dot ──
+        glyphMarginHoverMessage: {
+          value: `**Line ${line}**: ${data.pct}% (${data.cycles} cycles)`
+        },
+
+        // ── (D) Overview ruler indicator (scrollbar annotation) ──
+        overviewRuler: {
+          color: data.pct >= 50 ? "#e51400" : data.pct >= 10 ? "#e8a000" : "#3b78ff",
+          position: monaco.editor.OverviewRulerLane.Full,
+        },
+
+        // ── (E) Minimap color indicator ──
+        minimap: {
+          color: data.pct >= 50 ? "#e51400" : data.pct >= 10 ? "#e8a000" : "#3b78ff",
+          position: monaco.editor.MinimapPosition.Inline,
+        },
+
+        // ── (F) Stickiness: how decoration behaves when text is edited ──
+        // (Irrelevant in read-only mode, but shown for completeness)
+        stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+      }
+    });
+  }
+
+  // ── Apply decorations using createDecorationsCollection ──
+  // This is the modern API (replaces deprecated deltaDecorations).
+  // .set() replaces all previous decorations in this collection.
+  window._heatmapDecos.set(decorations);
+
+  setStatus("Heatmap applied: " + decorations.length + " lines annotated");
+}
+
+function clearAllDecorations() {
+  if (window._heatmapDecos) window._heatmapDecos.clear();
+  setStatus("Decorations cleared");
+}
+
+function jumpToHottest() {
+  if (!window._editorSource) return;
+  // Line 10 is the hottest in our example data
+  window._editorSource.revealLineInCenter(10);
+  window._editorSource.setPosition({ lineNumber: 10, column: 1 });
+  setStatus("Jumped to hottest line (10)");
+}
+
+function setStatus(msg) {
+  document.getElementById("status").textContent = msg;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. CUSTOM CUDA LANGUAGE REGISTRATION WITH MONARCH TOKENIZER
+// ═══════════════════════════════════════════════════════════════════════════
+
+function registerCudaLanguage() {
+
+  // Step 1: Register the language ID
+  monaco.languages.register({
+    id: "cuda",
+    extensions: [".cu", ".cuh"],
+    aliases: ["CUDA", "cuda", "CUDA C++"],
+    mimetypes: ["text/x-cuda"],
+  });
+
+  // Step 2: Define language configuration (brackets, comments, etc.)
+  monaco.languages.setLanguageConfiguration("cuda", {
+    comments: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+    },
+    brackets: [
+      ["{", "}"],
+      ["[", "]"],
+      ["(", ")"],
+      ["<<<", ">>>"],   // CUDA kernel launch brackets
+    ],
+    autoClosingPairs: [
+      { open: "{",   close: "}" },
+      { open: "[",   close: "]" },
+      { open: "(",   close: ")" },
+      { open: "<<<", close: ">>>" },
+      { open: '"',   close: '"', notIn: ["string"] },
+      { open: "'",   close: "'", notIn: ["string", "comment"] },
+    ],
+    surroundingPairs: [
+      { open: "{", close: "}" },
+      { open: "[", close: "]" },
+      { open: "(", close: ")" },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" },
+    ],
+    folding: {
+      markers: {
+        start: /^\s*#pragma\s+region\b/,
+        end:   /^\s*#pragma\s+endregion\b/,
+      }
+    },
+  });
+
+  // Step 3: Define the Monarch tokenizer
+  monaco.languages.setMonarchTokensProvider("cuda", {
+    defaultToken: "",
+    tokenPostfix: ".cu",
+
+    // ── Keyword arrays (referenced as @keywords, @cudaKeywords etc.) ──
+    keywords: [
+      // C++ keywords
+      "auto", "bool", "break", "case", "catch", "char", "class", "const",
+      "constexpr", "const_cast", "continue", "decltype", "default", "delete",
+      "do", "double", "dynamic_cast", "else", "enum", "explicit", "export",
+      "extern", "false", "final", "float", "for", "friend", "goto", "if",
+      "inline", "int", "long", "mutable", "namespace", "new", "noexcept",
+      "nullptr", "operator", "override", "private", "protected", "public",
+      "register", "reinterpret_cast", "return", "short", "signed", "sizeof",
+      "static", "static_assert", "static_cast", "struct", "switch",
+      "template", "this", "thread_local", "throw", "true", "try", "typedef",
+      "typeid", "typename", "union", "unsigned", "using", "virtual", "void",
+      "volatile", "wchar_t", "while",
+    ],
+
+    cudaKeywords: [
+      // ── CUDA qualifiers & built-ins ──
+      "__global__", "__device__", "__host__", "__shared__", "__constant__",
+      "__managed__", "__restrict__", "__noinline__", "__forceinline__",
+      "__launch_bounds__",
+      // ── CUDA built-in variables ──
+      "blockIdx", "blockDim", "threadIdx", "gridDim", "warpSize",
+      "laneid",
+      // ── CUDA sync & memory ──
+      "__syncthreads", "__syncwarp", "__threadfence", "__threadfence_block",
+      "__threadfence_system",
+      // ── CUDA atomics ──
+      "atomicAdd", "atomicSub", "atomicExch", "atomicMin", "atomicMax",
+      "atomicCAS", "atomicAnd", "atomicOr", "atomicXor",
+      // ── CUDA math ──
+      "__shfl_sync", "__shfl_up_sync", "__shfl_down_sync", "__shfl_xor_sync",
+      "__ballot_sync", "__any_sync", "__all_sync",
+      // ── PTX/SM90 ──
+      "cute", "cp_async", "tma_load", "tma_store",
+      "wgmma", "setmaxnreg",
+    ],
+
+    typeKeywords: [
+      "int8_t", "int16_t", "int32_t", "int64_t",
+      "uint8_t", "uint16_t", "uint32_t", "uint64_t",
+      "size_t", "ptrdiff_t",
+      "float16_t", "half", "__half", "__half2",
+      "float2", "float4", "int2", "int4", "dim3",
+      "cudaError_t", "cudaStream_t", "cudaEvent_t",
+    ],
+
+    operators: [
+      "=", ">", "<", "!", "~", "?", ":", "==", "<=", ">=", "!=",
+      "&&", "||", "++", "--", "+", "-", "*", "/", "&", "|", "^",
+      "%", "<<", ">>", "+=", "-=", "*=", "/=", "&=", "|=", "^=",
+      "%=", "<<=", ">>=", "->", "::",
+    ],
+
+    symbols: /[=><!~?:&|+\-*\/\^%]+/,
+    escapes: /\\(?:[0abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
+    integersuffix: /([uU](ll|LL|l|L)|(ll|LL|l|L)?[uU]?)/,
+    floatsuffix: /[fFlL]?/,
+
+    // ── Tokenizer state machine ──
+    tokenizer: {
+      root: [
+        // ── CUDA kernel launch syntax <<<...>>> ──
+        [/<<</, { token: "delimiter.cuda.launch", bracket: "@open" }],
+        [/>>>/, { token: "delimiter.cuda.launch", bracket: "@close" }],
+
+        // ── CUDA keywords (must check before general identifiers) ──
+        [/__[a-zA-Z_]\w*__/, {
+          cases: {
+            "@cudaKeywords": "keyword.cuda",
+            "@default": "identifier",
+          }
+        }],
+
+        // ── Identifiers, keywords, CUDA built-ins ──
+        [/[a-zA-Z_]\w*/, {
+          cases: {
+            "@cudaKeywords": "keyword.cuda",
+            "@typeKeywords": "type",
+            "@keywords":     "keyword",
+            "@default":      "identifier",
+          }
+        }],
+
+        // ── Preprocessor directives ──
+        [/^\s*#\s*include/, { token: "keyword.directive.include", next: "@include" }],
+        [/^\s*#\s*\w+/, "keyword.directive"],
+
+        // ── Whitespace & comments ──
+        { include: "@whitespace" },
+
+        // ── Brackets & delimiters ──
+        [/[{}()\[\]]/, "@brackets"],
+        [/@symbols/, {
+          cases: {
+            "@operators": "delimiter",
+            "@default": "",
+          }
+        }],
+
+        // ── Numbers ──
+        [/\d*\d+[eE]([\-+]?\d+)?(@floatsuffix)/, "number.float"],
+        [/\d*\.\d+([eE][\-+]?\d+)?(@floatsuffix)/, "number.float"],
+        [/0[xX][0-9a-fA-F']*[0-9a-fA-F](@integersuffix)/, "number.hex"],
+        [/0[0-7']*[0-7](@integersuffix)/, "number.octal"],
+        [/0[bB][0-1']*[0-1](@integersuffix)/, "number.binary"],
+        [/\d[\d']*\d(@integersuffix)/, "number"],
+        [/\d(@integersuffix)/, "number"],
+
+        // ── Delimiters ──
+        [/[;,.]/, "delimiter"],
+
+        // ── Strings ──
+        [/"([^"\\]|\\.)*$/, "string.invalid"],
+        [/"/, "string", "@string"],
+
+        // ── Characters ──
+        [/'[^\\']'/, "string"],
+        [/(')(@escapes)(')/, ["string", "string.escape", "string"]],
+        [/'/, "string.invalid"],
+      ],
+
+      whitespace: [
+        [/[ \t\r\n]+/, ""],
+        [/\/\*\*(?!\/)/, "comment.doc", "@doccomment"],
+        [/\/\*/, "comment", "@comment"],
+        [/\/\/.*\\$/, "comment", "@linecomment"],
+        [/\/\/.*$/, "comment"],
+      ],
+
+      comment: [
+        [/[^\/*]+/, "comment"],
+        [/\*\//, "comment", "@pop"],
+        [/[\/*]/, "comment"],
+      ],
+
+      linecomment: [
+        [/.*[^\\]$/, "comment", "@pop"],
+        [/[^]+/, "comment"],
+      ],
+
+      doccomment: [
+        [/[^\/*]+/, "comment.doc"],
+        [/\*\//, "comment.doc", "@pop"],
+        [/[\/*]/, "comment.doc"],
+      ],
+
+      string: [
+        [/[^\\"]+/, "string"],
+        [/@escapes/, "string.escape"],
+        [/\\./, "string.escape.invalid"],
+        [/"/, "string", "@pop"],
+      ],
+
+      include: [
+        [/(\s*)(<)([^<>]*)(>)/, [
+          "",
+          "keyword.directive.include.begin",
+          "string.include.identifier",
+          { token: "keyword.directive.include.end", next: "@pop" },
+        ]],
+        [/(\s*)(")([^"]*)(")/, [
+          "",
+          "keyword.directive.include.begin",
+          "string.include.identifier",
+          { token: "keyword.directive.include.end", next: "@pop" },
+        ]],
+      ],
+    },
+  });
+
+  // Step 4 (optional): Define custom token colors for CUDA keywords
+  // This makes CUDA-specific tokens render in a distinct color in vs-dark.
+  monaco.editor.defineTheme("vs-dark-cuda", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "keyword.cuda",              foreground: "4EC9B0", fontStyle: "bold" },
+      { token: "type",                      foreground: "4EC9B0" },
+      { token: "keyword.directive",         foreground: "C586C0" },
+      { token: "keyword.directive.include", foreground: "C586C0" },
+      { token: "string.include.identifier", foreground: "CE9178" },
+      { token: "delimiter.cuda.launch",     foreground: "DCDCAA", fontStyle: "bold" },
+    ],
+    colors: {},
+  });
+  // Note: to use this theme, pass theme: "vs-dark-cuda" to editor.create()
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SASS ASSEMBLY LANGUAGE (simplified Monarch tokenizer for right pane)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function registerSassAsmLanguage() {
+  monaco.languages.register({ id: "sass-asm" });
+
+  monaco.languages.setMonarchTokensProvider("sass-asm", {
+    defaultToken: "",
+    tokenPostfix: ".sass",
+
+    instructions: [
+      "LDG", "STG", "LDS", "STS", "LDSM", "LDGSTS",
+      "IMAD", "IADD3", "ISETP", "IMNMX",
+      "FADD", "FMUL", "FFMA", "FSETP",
+      "HMMA", "WGMMA", "QSPC",
+      "MOV", "SHFL", "VOTE", "S2R", "CS2R",
+      "BAR", "BSYNC", "BSSY", "YIELD", "EXIT",
+      "BRA", "BRX", "JMP", "RET",
+      "SEL", "PRMT", "SHF", "LOP3", "LEA",
+      "NOP", "WARPSYNC",
+      "FENCE", "MEMBAR", "DEPBAR",
+      "CCTL", "ERRBAR",
+      "TMA_LOAD", "TMA_STORE", "CP_ASYNC",
+    ],
+
+    registers: /R(\d+|Z)/,
+    predicates: /P(\d+|T)/,
+
+    tokenizer: {
+      root: [
+        // Comments
+        [/\/\/.*$/, "comment"],
+        [/;.*$/, "comment"],
+
+        // Address labels
+        [/^\s*\.\w+:/, "type.label"],
+
+        // Predicate guards: @P0, @!P1
+        [/@!?P\d+/, "keyword.predicate"],
+
+        // Instructions
+        [/[A-Z][A-Z0-9_.]+/, {
+          cases: {
+            "@instructions": "keyword.instruction",
+            "@default": "identifier",
+          }
+        }],
+
+        // Registers
+        [/R\d+|RZ/, "variable.register"],
+        [/P\d+|PT/, "variable.predicate"],
+        [/UR\d+|URZ/, "variable.uniform"],
+        [/SRZ|SR_\w+/, "variable.special"],
+
+        // Hex numbers
+        [/0[xX][0-9a-fA-F]+/, "number.hex"],
+        // Decimal numbers
+        [/\d+/, "number"],
+
+        // Delimiters
+        [/[,;\[\]{}()|]/, "delimiter"],
+        [/[+\-*]/, "delimiter"],
+
+        // Whitespace
+        [/[ \t\r\n]+/, ""],
+      ],
+    },
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SAMPLE DATA
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SAMPLE_CUDA_SOURCE = `\
+#include <cuda.h>
+#include <stdio.h>
+
+// Simple vector scale kernel
+__global__ void vector_scale(float* __restrict__ out,
+                             const float* __restrict__ in,
+                             float alpha, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = alpha * in[idx];
+    }
+}
+
+// Shared memory reduction kernel
+__global__ void block_reduce_sum(float* out, const float* in, int n) {
+    __shared__ float smem[256];
+
+    int tid = threadIdx.x;
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Load from global memory
+    smem[tid] = (gid < n) ? in[gid] : 0.0f;
+    __syncthreads();
+
+    // Tree reduction in shared memory
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            smem[tid] += smem[tid + stride];
+        }
+        __syncthreads();
+    }
+
+    // Write result
+    if (tid == 0) {
+        atomicAdd(out, smem[0]);
+    }
+}
+
+int main() {
+    // Launch kernel
+    vector_scale<<<256, 256>>>(d_out, d_in, 2.0f, N);
+    return 0;
+}
+`;
+
+const SAMPLE_SASS_ASM = `\
+// SASS for vector_scale, sm_90a
+// Source line mapping shown in comments
+.text._Z12vector_scalePfPKffi:
+    S2R R0, SR_TID.X              // threadIdx.x
+    S2R R3, SR_CTAID.X            // blockIdx.x
+    IMAD R0, R3, R2, R0           // idx = blockIdx.x * blockDim.x + threadIdx.x
+    ISETP.LT.AND P0, PT, R0, R4, PT  // if (idx < n)
+    @!P0 EXIT                     // early exit if out of bounds
+    IMAD.WIDE R6, R0, 0x4, R8    // &in[idx]
+    LDG.E R6, [R6]               // load in[idx]
+    IMAD.WIDE R10, R0, 0x4, R12  // &out[idx]
+    FFMA R6, R5, R6, RZ          // alpha * in[idx]
+    STG.E [R10], R6              // store out[idx]
+    EXIT
+`;
+
+</script>
+
+</body>
+</html>
