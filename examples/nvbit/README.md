@@ -2,7 +2,7 @@
 
 The NVBit region profiler uses **device-call markers** compiled into the target binary to maintain a per-warp region stack at runtime, then attributes every executed PC to its enclosing region -- producing instruction counts, pipeline breakdowns, SASS listings, and memory traces per named code region.
 
-For the full walkthrough (build, run all modes, join with CUPTI, generate Explorer), see [`tutorial.md`](../../tutorial.md).
+For the full walkthrough (build, run all modes, join with CUPTI, generate Explorer), see [`tutorial.md`](../../docs/tutorial.md).
 
 ### Quickstart
 
@@ -29,4 +29,4 @@ Output: `pc2region_*.json`, `region_stats_*.json`, `summary_*.txt`, and SASS lis
 
 See `run.sh` in this directory for all 6 modes (pcmap, all, inst_pipe, bb_hot, nvdisasm, ptx).
 
-For interactive visualization, see [`tutorial.md`](../../tutorial.md) Step 4: Generate the Explorer.
+For interactive visualization, see [`tutorial.md`](../../docs/tutorial.md) Step 4: Generate the Explorer.

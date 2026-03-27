@@ -2,7 +2,7 @@
 
 CUPTI collectors are **CUDA injection libraries** (`.so`) that attach to any CUDA binary via `CUDA_INJECTION64_PATH` and collect per-PC hardware metrics, stall-reason samples, and instruction execution counts -- no recompilation required.
 
-For the full walkthrough (build, run, join with NVBit, generate Explorer), see [`tutorial.md`](../../tutorial.md).
+For the full walkthrough (build, run, join with NVBit, generate Explorer), see [`tutorial.md`](../../docs/tutorial.md).
 
 ### Quickstart
 
@@ -29,4 +29,4 @@ Output: `sassmetrics_core.json` with per-PC hardware counters.
 - **SASS metrics** works on all architectures (Volta through Hopper).
 - See `run.sh` in this directory for the full set of collectors (PC sampling, 5 SASS profiles, source mapping, instruction execution).
 
-For interactive visualization, see [`tutorial.md`](../../tutorial.md) Step 4: Generate the Explorer.
+For interactive visualization, see [`tutorial.md`](../../docs/tutorial.md) Step 4: Generate the Explorer.

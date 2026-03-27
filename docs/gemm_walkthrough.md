@@ -271,4 +271,4 @@ bash examples/gemm/run.sh --nvbit-path=$NVBIT_PATH
 This runs every profiling stage and produces `examples/gemm/_out/explorer.html`
 — a single-page interactive dashboard with 7 tabs covering all collected data.
 
-See [`tutorial.md`](../tutorial.md) for the step-by-step breakdown of each stage.
+See [`tutorial.md`](tutorial.md) for the step-by-step breakdown of each stage.

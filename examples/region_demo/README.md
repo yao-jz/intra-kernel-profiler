@@ -2,7 +2,7 @@
 
 This example demonstrates the most powerful workflow: running **NVBit** and **CUPTI** on the same kernel and joining the results to get per-region hardware metrics. NVBit tells you *which PC belongs to which region*; CUPTI tells you *what each PC costs*. The join gives you a complete per-region performance breakdown.
 
-For the full walkthrough, see [`tutorial.md`](../../tutorial.md).
+For the full walkthrough, see [`tutorial.md`](../../docs/tutorial.md).
 
 ### Workflow
 

@@ -2,7 +2,7 @@
 
 This NVBit-based region profiler maintains a region stack via marker device calls and writes:
 
-- `tutorial.md` provides a complete “run everything” walkthrough for this standalone repo.
+- [`tutorial.md`](../../docs/tutorial.md) provides a complete “run everything” walkthrough for this standalone repo.
 
 - `region_stats_*.json`: per-region instruction/memory statistics (optional mem pattern)
 - `pc2region_*.json`: PC→region mapping (to join with CUPTI per-PC results)

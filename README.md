@@ -775,7 +775,7 @@ bash examples/gemm/run.sh --nvbit-path=$NVBIT_PATH
 
 For a complete step-by-step walkthrough — build two binaries, run every trace /
 NVBit / CUPTI profiling mode, generate the Explorer, and inspect the results —
-see **[`tutorial.md`](tutorial.md)**.
+see **[`tutorial.md`](docs/tutorial.md)**.
 
 The GEMM example pipeline can also be run as a single command:
 
@@ -840,8 +840,8 @@ intra_kernel_profiler/
 │   ├── cupti/                     # CUPTI injection target
 │   └── region_demo/               # NVBit + CUPTI join
 ├── scripts/                       # Python analysis + visualization
-├── docs/                          # guides + gallery
-└── tutorial.md                    # step-by-step walkthrough
+└── docs/                          # guides + gallery
+    └── tutorial.md                # step-by-step walkthrough
 ```
 
 ---

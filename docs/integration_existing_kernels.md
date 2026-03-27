@@ -7,7 +7,7 @@ For a runnable reference in this standalone repo, start with:
 
 - `examples/trace/record.cu`
 
-For "how to build and run everything", see `tutorial.md`.
+For "how to build and run everything", see [`tutorial.md`](../docs/tutorial.md).
 
 ---
 

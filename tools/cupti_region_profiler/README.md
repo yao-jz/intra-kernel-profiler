@@ -2,7 +2,7 @@
 
 This directory contains **CUDA injection libraries** (loaded via `CUDA_INJECTION64_PATH`) to collect per-PC / per-SASS profiling data.
 
-`tutorial.md` provides a complete “run everything” walkthrough for this standalone repo.
+[`tutorial.md`](../../docs/tutorial.md) provides a complete “run everything” walkthrough for this standalone repo.
 
 ### Build
 
