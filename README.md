@@ -10,11 +10,12 @@ traffic, hardware counters, stall reasons, timing — is attributed to each regi
 independently. You see *which phase* of your kernel is bottlenecked, not just
 that the kernel as a whole is slow.
 
-IKP provides three complementary profiling backends — **Trace** (nanosecond
-timing), **NVBit** (SASS-level instruction attribution), and **CUPTI** (hardware
-counters) — all region-aware, all joinable. Results flow into the **IKP
-Explorer**, a self-contained single-page HTML dashboard that shows every metric
-broken down by region alongside the annotated source, PTX, and SASS.
+IKP provides four complementary profiling backends — **Trace** (nanosecond
+timing), **NVBit** (SASS-level instruction attribution), **CUPTI** (hardware
+counters), and **NSys** (system-level timeline) — all region-aware, all
+joinable. Results flow into the **IKP Explorer**, a self-contained single-page
+HTML dashboard that shows every metric broken down by region alongside the
+annotated source, PTX, and SASS.
 
 <p align="center">
 <img src="docs/gallery/trace_ui.png" width="800" alt="IKP Explorer — Trace tab showing region timing comparison, full percentile table, and per-region duration histograms">
@@ -38,9 +39,10 @@ broken down by region alongside the annotated source, PTX, and SASS.
 - [1. Trace Profiler](#1-trace-profiler) — per-warp nanosecond timing
 - [2. NVBit Region Profiler](#2-nvbit-region-profiler) — SASS-level instruction attribution
 - [3. CUPTI Collectors](#3-cupti-collectors) — hardware counter collection
-- [4. IKP Explorer](#4-ikp-explorer) — interactive dashboard
-- [5. Scripts & Tools](#5-scripts--tools) — analysis, merge, visualization
-- [6. Tutorial — Profiling a Tiled GEMM](#6-tutorial--profiling-a-tiled-gemm)
+- [4. NSys Integration](#4-nsys-integration) — system-level timeline merge
+- [5. IKP Explorer](#5-ikp-explorer) — interactive dashboard
+- [6. Scripts & Tools](#6-scripts--tools) — analysis, merge, visualization
+- [7. Tutorial — Profiling a Tiled GEMM](#7-tutorial--profiling-a-tiled-gemm)
 - [Examples](#examples)
 - [Project Layout](#project-layout)
 
@@ -75,10 +77,19 @@ profiles), **instruction execution** (thread counts + predication), and
 **PM sampling** (Hopper+). These are joined with NVBit's PC-to-region map to
 produce per-region hardware metrics.
 
+### NSys — System-level timeline integration
+
+Imports NVIDIA Nsight Systems profiling data and merges it with IKP's
+intra-kernel trace into a **unified Chrome Trace JSON**. In Perfetto, you see
+per-warp region timing (IKP) alongside kernel launches, memory copies, NCCL
+communication, and CUDA API calls (NSys) — all on the same GPU-clock-aligned
+timeline. Includes NCCL communication timing extraction for overlap analysis.
+See [`docs/nsys_guide.md`](docs/nsys_guide.md).
+
 ### IKP Explorer — Interactive dashboard
 
 A single-page HTML dashboard combining source code (Monaco Editor), disassembled
-SASS, and every profiler metric into 7 interactive tabs:
+SASS, and every profiler metric into 8 interactive tabs:
 
 | Tab | What it shows |
 |-----|---------------|
@@ -88,6 +99,7 @@ SASS, and every profiler metric into 7 interactive tabs:
 | **Execution** | Instruction mix comparison, BB hotspots, branch site analysis |
 | **Memory** | Reuse distance, working set, inter-warp sharing, locality |
 | **Stalls** | SASS efficiency metrics (coalescing, predication, branch uniformity), per-region efficiency comparison table |
+| **System** | NSys kernel launches, memory ops, NCCL timing |
 | **Trace** | Duration histograms, full percentile tables, per-block/warp heatmaps |
 
 <details>
@@ -126,13 +138,15 @@ IKP has three tiers of dependencies:
 | **Trace only** | CUDA Toolkit + C++17 compiler | Per-warp timing, Chrome Trace output |
 | **+ CUPTI tools** | Above + CUPTI (bundled with CUDA) | PC sampling, SASS metrics, instrexec |
 | **+ NVBit tool** | Above + [NVBit](https://github.com/NVlabs/NVBit) | PC→region mapping, instruction mix, memory trace |
+| **+ NSys** | Above + `nsys` CLI (bundled with CUDA 11.1+) | System-level timeline merge, NCCL profiling |
 
 **Quick install check:**
 
 ```bash
 nvcc --version                                          # CUDA
 ls $CUDA_HOME/extras/CUPTI/include/cupti.h              # CUPTI
-ls $NVBIT_PATH/core/libnvbit.a                          # NVBit (optional)
+ls $NVBIT_PATH/core/libnvbit.a                          # NVBit
+nsys --version                                          # NSys
 ```
 
 **Build everything:**
@@ -601,7 +615,54 @@ For detailed collector documentation, see [`docs/cupti_guide.md`](docs/cupti_gui
 
 ---
 
-## 4. IKP Explorer
+## 4. NSys Integration
+
+NSys (NVIDIA Nsight Systems) provides system-level profiling: kernel launch
+timing, memory copies, NCCL communication, CUDA API calls, and NVTX ranges.
+IKP imports this data and merges it with intra-kernel traces to produce a
+**unified timeline** viewable in Perfetto.
+
+### Quick start
+
+```bash
+# 1. Profile with nsys
+nsys profile --output=report --trace=cuda,nvtx ./my_app
+
+# 2. Import into IKP JSON
+python3 scripts/ikp_nsys_import.py \
+    --nsys-rep report.nsys-rep --out-dir _out/nsys/
+
+# 3. Merge with IKP intra-kernel trace
+python3 scripts/ikp_nsys_merge.py \
+    --nsys-events _out/nsys/nsys_events.json \
+    --ikp-trace _out/trace/trace.json \
+    --out _out/trace/merged_trace.json
+
+# 4. Open merged_trace.json in https://ui.perfetto.dev
+```
+
+The merged trace shows IKP's per-SM/warp region timing (load_A, compute, store)
+alongside NSys's kernel launch envelopes, HtoD/DtoH memory copies, and CUDA API
+calls — all on the same GPU-clock-aligned timeline.
+
+### NSys scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/ikp_nsys_import.py` | Convert `.nsys-rep` → SQLite → IKP JSON |
+| `scripts/ikp_nsys_merge.py` | Merge NSys + IKP trace into unified Chrome Trace |
+
+### Compatibility
+
+Tested with NVIDIA Nsight Systems 2023.4+ and CUDA 12.4+. The importer handles
+schema differences across nsys versions (string-ID resolution, column name
+variants) via dynamic schema discovery.
+
+For the full tutorial and troubleshooting, see [`docs/nsys_guide.md`](docs/nsys_guide.md).
+
+---
+
+## 5. IKP Explorer
 
 ### How it's generated
 
@@ -730,7 +791,7 @@ into a running Explorer session without regenerating the HTML.
 
 ---
 
-## 5. Scripts & Tools
+## 6. Scripts & Tools
 
 ### Analysis scripts
 
@@ -750,6 +811,8 @@ into a running Explorer session without regenerating the HTML.
 | `scripts/ikp_cupti_pcsamp_merge.py` | Merge multiple PC sampling runs |
 | `scripts/ikp_cupti_sassmetrics_merge.py` | Merge SASS metrics across profiles |
 | `scripts/ikp_cupti_divergence_merge.py` | Merge divergence metrics |
+
+NSys scripts are listed in [Section 4: NSys Integration](#4-nsys-integration).
 
 ### Visualization scripts
 
@@ -771,7 +834,7 @@ bash examples/gemm/run.sh --nvbit-path=$NVBIT_PATH
 
 ---
 
-## 6. Tutorial — Profiling a Tiled GEMM
+## 7. Tutorial — Profiling a Tiled GEMM
 
 For a complete step-by-step walkthrough — build two binaries, run every trace /
 NVBit / CUPTI profiling mode, generate the Explorer, and inspect the results —
@@ -806,13 +869,19 @@ For a shorter walkthrough focused on the trace instrumentation only, see
 | [`examples/gemm/`](examples/gemm/) | Full pipeline: tiled GEMM with all profilers | `bash examples/gemm/run.sh --nvbit-path=$NVBIT_PATH` |
 | [`examples/nvbit/`](examples/nvbit/) | NVBit marker target: all 6 modes | `bash examples/nvbit/run.sh` |
 | [`examples/cupti/`](examples/cupti/) | CUPTI injection target: all collectors | `bash examples/cupti/run.sh` |
+| [`examples/nsys/`](examples/nsys/) | NSys + IKP trace integration | `bash examples/nsys/run.sh` |
+| [`examples/nsys_nccl/`](examples/nsys_nccl/) | NSys NCCL collective profiling (multi-GPU) | `bash examples/nsys_nccl/run.sh --ngpus=2` |
 | [`examples/region_demo/`](examples/region_demo/) | NVBit+CUPTI join workflow | `bash examples/region_demo/run.sh` |
 
-> **Pre-generated outputs:** [`examples/gemm/`](examples/gemm/) ships with pre-built results —
-> [`gemm_trace.json`](examples/gemm/gemm_trace.json),
-> [`gemm_trace_summary.json`](examples/gemm/gemm_trace_summary.json), and
-> [`explorer.html`](examples/gemm/explorer.html) — so you can browse the Explorer and
-> inspect a real trace immediately, without running any profiling.
+> **Pre-generated outputs — no GPU required:**
+> - [`examples/gemm/`](examples/gemm/) ships with
+>   [`gemm_trace.json`](examples/gemm/gemm_trace.json),
+>   [`explorer.html`](examples/gemm/explorer.html) — browse the full Explorer immediately.
+> - [`examples/nsys/`](examples/nsys/) ships with
+>   [`merged_trace.json`](examples/nsys/merged_trace.json) (open in [Perfetto](https://ui.perfetto.dev)),
+>   [`explorer.html`](examples/nsys/explorer.html) — see the unified IKP + NSys timeline and System tab.
+> - [`examples/nsys_nccl/`](examples/nsys_nccl/) ships with
+>   [`gemm_nccl_trace.json`](examples/nsys_nccl/gemm_nccl_trace.json) — GEMM + NCCL AllGather cross-level trace.
 
 ---
 
@@ -838,10 +907,13 @@ intra_kernel_profiler/
 │   ├── trace/                     # basic trace examples
 │   ├── nvbit/                     # NVBit marker target
 │   ├── cupti/                     # CUPTI injection target
+│   ├── nsys/                      # NSys + IKP trace integration
+│   ├── nsys_nccl/                 # NSys NCCL collective profiling
 │   └── region_demo/               # NVBit + CUPTI join
 ├── scripts/                       # Python analysis + visualization
 └── docs/                          # guides + gallery
-    └── tutorial.md                # step-by-step walkthrough
+    ├── tutorial.md                # step-by-step walkthrough
+    └── nsys_guide.md              # NSys integration guide
 ```
 
 ---

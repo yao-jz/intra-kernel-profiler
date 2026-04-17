@@ -204,6 +204,42 @@ nvbit_run ptx "${OUT}/nvbit/ptx" \
 echo ""
 
 # ═════════════════════════════════════════════════════════════════════
+# Step 2.5: NSys profiling (optional)
+# ═════════════════════════════════════════════════════════════════════
+if command -v nsys >/dev/null 2>&1; then
+  echo "[2.5/5] NSys profiling"
+  mkdir -p "${OUT}/nsys"
+
+  # Collect nsys profile (using the plain binary, same as CUPTI)
+  nsys profile \
+    --output="${OUT}/nsys/report" \
+    --force-overwrite=true \
+    --trace=cuda,nvtx \
+    --cuda-memory-usage=true \
+    "${HERE}/tiled_gemm" --m=2048 --n=2048 --k=2048 --iters=5
+
+  # Import nsys data into IKP JSON format
+  python3 "${ROOT}/scripts/ikp_nsys_import.py" \
+    --nsys-rep "${OUT}/nsys/report.nsys-rep" \
+    --out-dir "${OUT}/nsys/" \
+    --kernel-regex "${KERNEL_REGEX}"
+
+  # Merge nsys timeline with IKP intra-kernel trace
+  if [[ -f "${OUT}/trace/gemm_trace.json" ]] && [[ -f "${OUT}/nsys/nsys_events.json" ]]; then
+    python3 "${ROOT}/scripts/ikp_nsys_merge.py" \
+      --nsys-events "${OUT}/nsys/nsys_events.json" \
+      --ikp-trace "${OUT}/trace/gemm_trace.json" \
+      --nsys-kernels "${OUT}/nsys/nsys_kernels.json" \
+      --kernel-regex "${KERNEL_REGEX}" \
+      --out "${OUT}/trace/merged_trace.json"
+    echo "  merged timeline -> ${OUT}/trace/merged_trace.json"
+  fi
+else
+  echo "[2.5/5] SKIP: nsys not found in PATH"
+fi
+echo ""
+
+# ═════════════════════════════════════════════════════════════════════
 # Step 3: CUPTI profiling
 # ═════════════════════════════════════════════════════════════════════
 # NOTE: CUPTI runs use the plain binary (tiled_gemm), NOT the NVBit
@@ -301,7 +337,15 @@ print_size() {
 
 print_size "${OUT}/trace/gemm_trace.json"
 print_size "${OUT}/trace/gemm_trace_summary.json"
+print_size "${OUT}/trace/merged_trace.json"
 echo ""
+if [[ -d "${OUT}/nsys" ]]; then
+  echo "  NSys:"
+  for f in "${OUT}"/nsys/*.json; do
+    [[ -f "$f" ]] && printf "    %-50s %s\n" "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+  done
+  echo ""
+fi
 echo "  NVBit (5 modes):"
 for mode in pcmap all inst_pipe bb_hot nvdisasm ptx; do
   count=$(find "${OUT}/nvbit/${mode}" -type f 2>/dev/null | wc -l)
@@ -322,3 +366,6 @@ echo "     then open http://localhost:8080/explorer.html"
 echo ""
 echo "To view the trace in Perfetto:"
 echo "  Open ${OUT}/trace/gemm_trace.json at https://ui.perfetto.dev"
+if [[ -f "${OUT}/trace/merged_trace.json" ]]; then
+echo "  Or open ${OUT}/trace/merged_trace.json for unified IKP + NSys timeline"
+fi

@@ -12,6 +12,7 @@ CUDA; the NVBit/CUPTI tools have additional requirements.
 | C++17 compiler | Everything | GCC >= 9, Clang >= 10, or MSVC 19.14+ |
 | CMake | CMake build | >= 3.20 |
 | NVBit | `tools/nvbit_region_profiler` | 1.7+ (aarch64 or x86_64) |
+| NSys | NSys integration (`scripts/ikp_nsys_*.py`) | 2023.4+ (bundled with CUDA) |
 | Python 3 | Analysis scripts | >= 3.8 |
 | NumPy + Matplotlib | Visualization scripts | any recent version |
 
@@ -188,7 +189,42 @@ make -C tools/cupti_region_profiler \
 
 ---
 
-## 6. Python (for analysis scripts)
+## 6. NSys (for system-level timeline merge)
+
+NSys (NVIDIA Nsight Systems) is only needed if you want to merge system-level
+profiling data (kernel launches, memory copies, NCCL communication) with IKP's
+intra-kernel traces.  The core trace library, NVBit, and CUPTI tools do
+**not** require NSys.
+
+NSys ships with the CUDA Toolkit (11.1+).  Verify it is on your PATH:
+
+```bash
+nsys --version    # should print 2023.x or newer
+```
+
+If `nsys` is not found, add it:
+
+```bash
+export PATH=$CUDA_HOME/bin:$PATH
+```
+
+On some systems the `nsys` binary lives in a separate Nsight Systems install
+directory (e.g., `/opt/nvidia/nsight-systems/*/target-linux-x64/`).  Locate
+it and add to PATH.
+
+### Verify
+
+```bash
+# Quick check: profile a trivial command
+nsys profile --stats=true --output=/tmp/nsys_test sleep 0.1
+```
+
+If this succeeds, NSys is ready.  See [`docs/nsys_guide.md`](nsys_guide.md) for the
+full integration tutorial.
+
+---
+
+## 7. Python (for analysis scripts)
 
 Only needed for post-processing / visualization, not for building or running
 the profiler itself.
@@ -216,7 +252,10 @@ make -C tools/cupti_region_profiler -j
 # 3. Build NVBit tool (optional)
 make -C tools/nvbit_region_profiler NVBIT_PATH=$NVBIT_PATH ARCH=90a -j
 
-# 4. Run everything end-to-end
+# 4. NSys integration (optional)
+bash examples/nsys/run.sh   # builds, traces, profiles with nsys, merges, generates Explorer
+
+# 5. Run everything end-to-end
 bash scripts/run_all_examples.sh --out=_demo_out
 ```
 
@@ -234,3 +273,5 @@ bash scripts/run_all_examples.sh --out=_demo_out
 | `cmake_minimum_required ... 3.20` | CMake too old | `pip install cmake` or download a newer binary |
 | PC sampling returns empty JSON | Restricted profiling permissions | Use SASS metrics instead, or request admin profiling access |
 | `ptxas` version warnings during NVBit build | ptxas < 12.3 | Update CUDA Toolkit or ignore (build still succeeds with `-maxrregcount=24` fallback) |
+| `nsys: command not found` | NSys not in PATH | `export PATH=$CUDA_HOME/bin:$PATH` or locate the Nsight Systems install directory |
+| `nsys export` fails or hangs | Permissions or old nsys version | Verify with `nsys --version` (need 2023.4+); on HPC, check profiling permissions |

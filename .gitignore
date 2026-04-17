@@ -60,6 +60,9 @@ examples/**/tiled_gemm_nvbit
 !examples/gemm/gemm_trace.json
 !examples/gemm/gemm_trace_summary.json
 !examples/gemm/explorer.html
+!examples/nsys/merged_trace.json
+!examples/nsys/explorer.html
+!examples/nsys_nccl/gemm_nccl_trace.json
 
 # Example run output directories
 examples/**/_out/
@@ -90,6 +93,11 @@ compile_commands.json
 
 # ── AI assistant state ────────────────────────────────────────────
 .claude/
+
+# ── NSys artifacts ────────────────────────────────────────────────
+*.nsys-rep
+*.sqlite
+*.qdstrm
 
 # ── Log files ─────────────────────────────────────────────────────
 *.log
